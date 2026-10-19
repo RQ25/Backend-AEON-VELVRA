@@ -178,48 +178,60 @@ export const deleteUser = async (request : Request, response : Response) => {
     }
 }
 
-/** authentication = login
- *  authorization = izin hak akses
- */
+// authentication = login
+// authorization = izin hak akses
+// FIX AUTHENTICATION (Bisa membaca password Plaintext maupun MD5 Hash)
 export const authentication = async (request: Request, response: Response) => {
     try {
         const { email, password } = request.body;
 
+        // 1. Cari user berdasarkan email saja
         const findUser = await prisma.user.findFirst({
-            where: { email, password: md5(password) },
+            where: { email },
         });
 
-        if (!findUser)
-            return response
-                .status(200)
-                .json({
-                    status: false,
-                    logged: false,
-                    message: "Email or password is invalid",
-                });
+        if (!findUser) {
+            return response.status(200).json({
+                status: false,
+                logged: false,
+                message: "Email or password is invalid",
+            });
+        }
 
-            let data = {
-                id: findUser.userId,
-                name: findUser.name,
-                email: findUser.email,
-                role: findUser.role,
-            };
+        // 2. Cek apakah password cocok dengan Plaintext ATAU MD5 Hash
+        const isPlaintextMatch = findUser.password === password;
+        const isMd5Match = findUser.password === md5(password);
 
-            let playpod = JSON.stringify(data);
-            /** menyiapkan data yang akan dijadikan token
-             *  stringfly untuk menjadikan objek jadi string
-             */
-            let token = sign(playpod, SECRET || "token");
-            /** sign untuk mengenerate token */
-            
-            return response .status(200).json({ status: true, logged: true, message: "login success", token, data });
+        if (!isPlaintextMatch && !isMd5Match) {
+            return response.status(200).json({
+                status: false,
+                logged: false,
+                message: "Email or password is invalid",
+            });
+        }
 
-        } catch (error) {
-            return response
-                .json({
-                    status: false,
-                    message: `There is an error. ${error}`
-                })
-                .status(400);
+        const data = {
+            id: findUser.userId,
+            name: findUser.name,
+            email: findUser.email,
+            role: findUser.role,
+        };
+
+        const playpod = JSON.stringify(data);
+        const token = sign(playpod, SECRET || "token");
+
+        return response.status(200).json({
+            status: true,
+            logged: true,
+            message: "login success",
+            token,
+            data
+        });
+
+    } catch (error) {
+        return response.status(400).json({
+            status: false,
+            message: `There is an error. ${error}`
+        });
     }
 };
