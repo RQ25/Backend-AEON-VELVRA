@@ -31,44 +31,37 @@ export const getAllOrders = async (req: Request, res: Response) => {
   }
 };
 
-// 2. Create Order & Send Email
-// 2. Create Order & Send Email
+// Create Order & Send Email
 export const createOrder = async (req: Request, res: Response) => {
   try {
     const { customer, table_number, payment_method } = req.body;
-
-    // Cek semua kemungkinan nama field array dari frontend Next.js
-    const orderList = 
-      req.body.orderList || 
-      req.body.order_list || 
-      req.body.items || 
-      req.body.cart || 
-      req.body.detail_order || 
-      [];
+    const orderList = req.body.orderList || req.body.orderlists || req.body.items || [];
 
     if (!Array.isArray(orderList) || orderList.length === 0) {
-      console.log("Payload yang diterima dari frontend:", req.body);
       return res.status(400).json({
         status: false,
         message: "Daftar pesanan (orderList) tidak boleh kosong!",
       });
     }
 
-    // Hitung total harga pesanan
+    // 1. Hitung total harga pesanan menggunakan primary key 'menuId'
     let total_price = 0;
     for (const item of orderList) {
-      const menuId = Number(item.menuId || item.menu_id || item.id);
-      const menuItem: any = await prisma.menu.findFirst({
-        where: { id: menuId } as any,
-      });
+      const targetMenuId = Number(item.menuId || item.id || item.menu_id);
       
+      const menuItem = await prisma.menu.findFirst({
+        where: {
+          menuId: targetMenuId, // ✅ FIX: Menggunakan 'menuId' sesuai Prisma Schema
+        },
+      });
+
       if (menuItem) {
         const qty = Number(item.quantity || item.qty || 1);
         total_price += Number(menuItem.price) * qty;
       }
     }
 
-    // Simpan order ke database
+    // 2. Simpan order ke database
     const newOrder = await prisma.order.create({
       data: {
         customer,
@@ -77,7 +70,7 @@ export const createOrder = async (req: Request, res: Response) => {
         total_price,
         orderList: {
           create: orderList.map((item: any) => ({
-            menuId: Number(item.menuId || item.menu_id || item.id),
+            menuId: Number(item.menuId || item.id || item.menu_id),
             quantity: Number(item.quantity || item.qty || 1),
             note: item.note || "",
           })),
@@ -92,7 +85,7 @@ export const createOrder = async (req: Request, res: Response) => {
       },
     });
 
-    // Kirim email notifikasi
+    // 3. Kirim email notifikasi
     try {
       await sendOrderNotificationEmail(newOrder);
     } catch (emailErr) {
