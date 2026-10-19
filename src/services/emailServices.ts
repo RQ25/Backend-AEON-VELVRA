@@ -1,24 +1,10 @@
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
 
-// Gunakan host smtp.gmail.com dengan port 465 (SSL)
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 465,
-  secure: true, // WAJIB true untuk port 465
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-  // Tambahkan opsi TLS agar lolos dari pemblokiran firewall cloud
-  tls: {
-    rejectUnauthorized: false,
-  },
-  connectionTimeout: 15000, // Beri batas waktu koneksi 15 detik
-});
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 export const sendOrderNotificationEmail = async (orderData: any) => {
-  console.log("--> [EMAIL SERVICE] Memproses pengiriman email...");
-  console.log("--> Config check - Sender:", process.env.EMAIL_USER, "| Receiver:", process.env.EMAIL_RECEIVER);
+  console.log("--> [EMAIL SERVICE] Memproses pengiriman email via Resend API...");
+  console.log("--> Config check - Receiver:", process.env.EMAIL_RECEIVER);
 
   try {
     const { customer, table_number, payment_method, total_price, id, orderList } = orderData;
@@ -44,9 +30,10 @@ export const sendOrderNotificationEmail = async (orderData: any) => {
           .join('')
       : '';
 
-    const mailOptions = {
-      from: `"AEON VELVRA System" <${process.env.EMAIL_USER}>`,
-      to: process.env.EMAIL_RECEIVER,
+    // Kirim email via HTTP REST API (Tembus blokir port SMTP Railway)
+    const { data, error } = await resend.emails.send({
+      from: "AEON VELVRA System <onboarding@resend.dev>",
+      to: [process.env.EMAIL_RECEIVER || "thoriqb30@gmail.com"],
       subject: `🚨 ORDER BARU MASUK! - Meja ${table_number} (#${id})`,
       html: `
         <div style="font-family: Arial, sans-serif; padding: 24px; background-color: #0c0812; color: #ffffff; border-radius: 12px; max-width: 600px; margin: 0 auto; border: 1px solid #222;">
@@ -86,13 +73,15 @@ export const sendOrderNotificationEmail = async (orderData: any) => {
           </p>
         </div>
       `,
-    };
+    });
 
-    const info = await transporter.sendMail(mailOptions);
-    console.log("✅ [EMAIL SERVICE] SUCCESS! Email terkirim ke:", process.env.EMAIL_RECEIVER);
-    console.log("--> Message ID:", info.messageId);
-    return info;
+    if (error) {
+      console.error("❌ [EMAIL SERVICE] RESEND API ERROR:", error);
+      return;
+    }
+
+    console.log("✅ [EMAIL SERVICE] EMAIL TERKIRIM VIA RESEND! ID:", data?.id);
   } catch (error) {
-    console.error("❌ [EMAIL SERVICE] GAGAL MENGIRIM EMAIL:", error);
+    console.error("❌ [EMAIL SERVICE] CRITICAL ERROR:", error);
   }
 };
