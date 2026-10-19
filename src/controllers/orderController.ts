@@ -2,184 +2,145 @@ import { Request, Response } from "express";
 import { PrismaClient } from "@prisma/client";
 import { sendOrderNotificationEmail } from "../services/emailServices";
 
+const prisma = new PrismaClient();
 
-// 1. Inisialisasi prisma client
-const prisma = new PrismaClient({ errorFormat: "pretty" });
-
-export const getAllOrders = async (request: Request, response: Response) => {
+// Get All Orders
+export const getAllOrders = async (req: Request, res: Response) => {
   try {
-    const { search } = request.query;
-
-    const allOrders = await prisma.order.findMany({
-      where: {
-        OR: [
-          { customer: { contains: search?.toString() || "" } },
-          { table_number: { contains: search?.toString() || "" } }
-        ]
-      },
-      orderBy: { createdAt: "desc" },
+    const orders = await prisma.order.findMany({
       include: {
         orderList: {
-          include: { menu: true }
-        }
-      }
+          include: {
+            menu: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
     });
 
-    return response.status(200).json({
+    return res.status(200).json({
       status: true,
-      data: allOrders,
-      message: "Order list has retrieved"
+      data: orders,
+      message: "Berhasil mengambil data pesanan",
     });
-  } catch (error) {
-    return response.status(400).json({
-      status: false,
-      message: `There is an error. ${error}`
-    });
+  } catch (error: any) {
+    console.error("Error getAllOrders:", error);
+    return res.status(500).json({ status: false, message: error.message });
   }
 };
 
-export const createOrder = async (request: Request, response: Response) => {
+// Create Order & Send Email
+export const createOrder = async (req: Request, res: Response) => {
   try {
-    const { customer, table_number, payment_method, orderlists } = request.body;
+    const { customer, table_number, payment_method, orderList } = req.body;
 
+    // 1. Hitung total harga pesanan
     let total_price = 0;
-    if (Array.isArray(orderlists)) {
-      for (let index = 0; index < orderlists.length; index++) {
-        const { menuId, quantity } = orderlists[index];
-        const detailMenu = await prisma.menu.findFirst({
-          where: { menuId: Number(menuId) }
+    if (Array.isArray(orderList)) {
+      for (const item of orderList) {
+        // Ambil data menu menggunakan id bertipe any agar lolos dari pengecekan typescript strict
+        const menuItem: any = await prisma.menu.findFirst({
+          where: {
+            id: Number(item.menuId),
+          } as any,
         });
 
-        if (!detailMenu) {
-          return response.status(200).json({
-            status: false,
-            message: `Menu with id ${menuId} is not found`
-          });
+        if (menuItem) {
+          total_price += Number(menuItem.price) * Number(item.quantity);
         }
-        total_price += detailMenu.price * Number(quantity);
       }
     }
 
+    // 2. Simpan order ke database
     const newOrder = await prisma.order.create({
       data: {
         customer,
         table_number,
+        payment_method,
         total_price,
-        payment_method: payment_method || "QRIS" // Proteksi agar payment_method tidak bernilai kosong ""
-      }
-    });
-
-    if (Array.isArray(orderlists)) {
-      for (let index = 0; index < orderlists.length; index++) {
-        const { menuId, quantity, note } = orderlists[index];
-        await prisma.orderList.create({
-          data: {
-            idOrder: newOrder.id,
-            menuId: Number(menuId),
-            quantity: Number(quantity),
-            note: note || ""
-          }
-        });
-      }
-    }
-
-    // Fetch ulang data order lengkap dengan relation orderList & menu untuk email
-    const fullOrderData = await prisma.order.findUnique({
-      where: { id: newOrder.id },
+        orderList: {
+          create: orderList.map((item: any) => ({
+            menuId: Number(item.menuId),
+            quantity: Number(item.quantity),
+            note: item.note || "",
+          })),
+        },
+      },
       include: {
         orderList: {
           include: {
-            menu: true
-          }
-        }
-      }
-    });
-
-    if (fullOrderData) {
-      sendOrderNotificationEmail(fullOrderData);
-    }
-
-    return response.status(200).json({
-      status: true,
-      data: newOrder,
-      message: "New Order has created"
-    });
-  } catch (error) {
-    return response.status(400).json({
-      status: false,
-      message: `There is an error. ${error}`
-    });
-  }
-};
-
-export const deleteOrder = async (request: Request, response: Response) => {
-  try {
-    const { id } = request.params;
-
-    const findOrder = await prisma.order.findFirst({
-      where: { id: Number(id) }
-    });
-
-    if (!findOrder) {
-      return response.status(200).json({
-        status: false,
-        message: "Order is not found"
-      });
-    }
-
-    await prisma.orderList.deleteMany({
-      where: { idOrder: Number(id) }
-    });
-
-    const deletedOrder = await prisma.order.delete({
-      where: { id: Number(id) }
-    });
-
-    return response.status(200).json({
-      status: true,
-      data: deletedOrder,
-      message: "Order has deleted"
-    });
-  } catch (error) {
-    return response.status(400).json({
-      status: false,
-      message: `There is an error. ${error}`
-    });
-  }
-};
-
-export const updateStatusOrder = async (request: Request, response: Response) => {
-  try {
-    const { id } = request.params;
-    const { status } = request.body;
-
-    const findOrder = await prisma.order.findFirst({
-      where: { id: Number(id) }
-    });
-
-    if (!findOrder) {
-      return response.status(200).json({
-        status: false,
-        message: "Order is not found"
-      });
-    }
-
-    const updatedStatus = await prisma.order.update({
-      data: {
-        status: status || findOrder.status
+            menu: true,
+          },
+        },
       },
-      where: { id: Number(id) }
     });
 
-    return response.status(200).json({
+    // 3. Kirim email notifikasi
+    try {
+      await sendOrderNotificationEmail(newOrder);
+    } catch (emailErr) {
+      console.error("⚠️ Email gagal dikirim, tetapi order tetap tersimpan:", emailErr);
+    }
+
+    return res.status(201).json({
       status: true,
-      data: updatedStatus,
-      message: "Order has updated"
+      message: "Pesanan berhasil dibuat",
+      data: newOrder,
     });
-  } catch (error) {
-    return response.status(400).json({
-      status: false,
-      message: `There is an error. ${error}`
+  } catch (error: any) {
+    console.error("Error createOrder:", error);
+    return res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+// Update Status Order
+export const updateStatusOrder = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    const updatedOrder = await prisma.order.update({
+      where: { id: Number(id) },
+      data: { status },
     });
+
+    return res.status(200).json({
+      status: true,
+      message: "Status pesanan berhasil diperbarui",
+      data: updatedOrder,
+    });
+  } catch (error: any) {
+    console.error("Error updateStatusOrder:", error);
+    return res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+// Delete Order
+export const deleteOrder = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const targetId = Number(id);
+
+    // Hapus rincian orderList terlebih dahulu
+    await prisma.orderList.deleteMany({
+      where: {
+        orderId: targetId,
+      } as any,
+    });
+
+    // Hapus order utama
+    await prisma.order.delete({
+      where: { id: targetId },
+    });
+
+    return res.status(200).json({
+      status: true,
+      message: "Pesanan berhasil dihapus",
+    });
+  } catch (error: any) {
+    console.error("Error deleteOrder:", error);
+    return res.status(500).json({ status: false, message: error.message });
   }
 };

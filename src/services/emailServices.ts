@@ -9,6 +9,9 @@ const transporter = nodemailer.createTransport({
 });
 
 export const sendOrderNotificationEmail = async (orderData: any) => {
+  console.log("--> [EMAIL SERVICE] Memproses pengiriman email...");
+  console.log("--> Config check - Sender:", process.env.EMAIL_USER, "| Receiver:", process.env.EMAIL_RECEIVER);
+
   try {
     const { customer, table_number, payment_method, total_price, id, orderList } = orderData;
 
@@ -78,8 +81,9 @@ export const sendOrderNotificationEmail = async (orderData: any) => {
     };
 
     const info = await transporter.sendMail(mailOptions);
-    console.log("✅ Email notifikasi terkirim! ID:", info.messageId);
+    console.log("✅ [EMAIL SERVICE] Email notifikasi terkirim! MessageID:", info.messageId);
+    return info;
   } catch (error) {
-    console.error("❌ GAGAL MENGIRIM EMAIL:", error);
+    console.error("❌ [EMAIL SERVICE] GAGAL MENGIRIM EMAIL:", error);
   }
 };
