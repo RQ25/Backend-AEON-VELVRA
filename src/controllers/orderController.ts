@@ -32,12 +32,22 @@ export const getAllOrders = async (req: Request, res: Response) => {
 };
 
 // 2. Create Order & Send Email
+// 2. Create Order & Send Email
 export const createOrder = async (req: Request, res: Response) => {
   try {
     const { customer, table_number, payment_method } = req.body;
-    const orderList = req.body.orderList || req.body.items || req.body.cart || [];
+
+    // Cek semua kemungkinan nama field array dari frontend Next.js
+    const orderList = 
+      req.body.orderList || 
+      req.body.order_list || 
+      req.body.items || 
+      req.body.cart || 
+      req.body.detail_order || 
+      [];
 
     if (!Array.isArray(orderList) || orderList.length === 0) {
+      console.log("Payload yang diterima dari frontend:", req.body);
       return res.status(400).json({
         status: false,
         message: "Daftar pesanan (orderList) tidak boleh kosong!",
@@ -47,11 +57,14 @@ export const createOrder = async (req: Request, res: Response) => {
     // Hitung total harga pesanan
     let total_price = 0;
     for (const item of orderList) {
+      const menuId = Number(item.menuId || item.menu_id || item.id);
       const menuItem: any = await prisma.menu.findFirst({
-        where: { id: Number(item.menuId || item.id) } as any,
+        where: { id: menuId } as any,
       });
+      
       if (menuItem) {
-        total_price += Number(menuItem.price) * Number(item.quantity || item.qty || 1);
+        const qty = Number(item.quantity || item.qty || 1);
+        total_price += Number(menuItem.price) * qty;
       }
     }
 
@@ -59,12 +72,12 @@ export const createOrder = async (req: Request, res: Response) => {
     const newOrder = await prisma.order.create({
       data: {
         customer,
-        table_number: String(table_number), // Gunakan String di sini agar tidak error
+        table_number: String(table_number),
         payment_method,
         total_price,
         orderList: {
           create: orderList.map((item: any) => ({
-            menuId: Number(item.menuId || item.id),
+            menuId: Number(item.menuId || item.menu_id || item.id),
             quantity: Number(item.quantity || item.qty || 1),
             note: item.note || "",
           })),
