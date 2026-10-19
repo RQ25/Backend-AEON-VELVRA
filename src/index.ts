@@ -11,13 +11,25 @@ import OrderRoute from './routers/orderRoute';
 const PORT: number = 8000;
 const app = express();
 
-app.use(cors());
+// 🟢 KONFIGURASI CORS DIPERBAIKI (IZINKAN DOMAIN VERCEL)
+app.use(cors({
+  origin: [
+    'http://localhost:3000',
+    'https://aeonvelvra.vercel.app',
+    'https://frontend-aeon-velvra.vercel.app'
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}));
+
 app.use(express.json());
 
-// 🟢 PERBAIKAN 1: Tambahkan DUA prefix sekaligus (/menu-picture DAN /menu_picture)
-// Agar baik penamaan pakai dash (-) maupun underscore (_) di URL tetap bisa mengakses folder fisik menu_picture
+// 🟢 static folder
 app.use("/menu-picture", express.static(path.join(process.cwd(), "public", "menu_picture")));
 app.use("/menu_picture", express.static(path.join(process.cwd(), "public", "menu_picture")));
+app.use("/profile-picture", express.static(path.join(process.cwd(), "public", "profile_picture")));
+app.use("/profile_picture", express.static(path.join(process.cwd(), "public", "profile_picture")));
 
 const swaggerOptions = {
   swaggerDefinition: {
@@ -53,7 +65,6 @@ app.use("/user", UserRoutes);
 app.use(`/menu`, MenuRoute);
 app.use(`/order`, OrderRoute);
 
-// 🟢 PERBAIKAN 2: Akses fallback folder public bawaan
 app.use(express.static(path.join(process.cwd(), "public")));
 
 app.listen(PORT, () => {
