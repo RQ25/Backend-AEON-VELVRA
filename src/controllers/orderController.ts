@@ -44,14 +44,14 @@ export const createOrder = async (req: Request, res: Response) => {
       });
     }
 
-    // 1. Hitung total harga pesanan menggunakan primary key 'menuId'
+    // 1. Hitung total harga pesanan
     let total_price = 0;
     for (const item of orderList) {
       const targetMenuId = Number(item.menuId || item.id || item.menu_id);
       
       const menuItem = await prisma.menu.findFirst({
         where: {
-          menuId: targetMenuId, // ✅ FIX: Menggunakan 'menuId' sesuai Prisma Schema
+          menuId: targetMenuId,
         },
       });
 
@@ -85,13 +85,12 @@ export const createOrder = async (req: Request, res: Response) => {
       },
     });
 
-    // 3. Kirim email notifikasi
-    try {
-      await sendOrderNotificationEmail(newOrder);
-    } catch (emailErr) {
-      console.error("⚠️ Gagal kirim email:", emailErr);
-    }
+    // 3. FIRE-AND-FORGET EMAIL (Hapus 'await' di sini agar response HTTP langsung terkirim ke frontend)
+    sendOrderNotificationEmail(newOrder).catch((emailErr) => {
+      console.error("⚠️ Background email dispatch failed:", emailErr);
+    });
 
+    // 4. Langsung kirim respon sukses ke frontend tanpa menunggu email selesai
     return res.status(201).json({
       status: true,
       message: "Pesanan berhasil dibuat",
