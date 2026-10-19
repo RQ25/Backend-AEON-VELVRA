@@ -4,7 +4,7 @@ import { sendOrderNotificationEmail } from "../services/emailServices";
 
 const prisma = new PrismaClient();
 
-// Get All Orders
+// 1. Get All Orders
 export const getAllOrders = async (req: Request, res: Response) => {
   try {
     const orders = await prisma.order.findMany({
@@ -31,39 +31,41 @@ export const getAllOrders = async (req: Request, res: Response) => {
   }
 };
 
-// Create Order & Send Email
+// 2. Create Order & Send Email
 export const createOrder = async (req: Request, res: Response) => {
   try {
-    const { customer, table_number, payment_method, orderList } = req.body;
+    const { customer, table_number, payment_method } = req.body;
+    const orderList = req.body.orderList || req.body.items || req.body.cart || [];
 
-    // 1. Hitung total harga pesanan
+    if (!Array.isArray(orderList) || orderList.length === 0) {
+      return res.status(400).json({
+        status: false,
+        message: "Daftar pesanan (orderList) tidak boleh kosong!",
+      });
+    }
+
+    // Hitung total harga pesanan
     let total_price = 0;
-    if (Array.isArray(orderList)) {
-      for (const item of orderList) {
-        // Ambil data menu menggunakan id bertipe any agar lolos dari pengecekan typescript strict
-        const menuItem: any = await prisma.menu.findFirst({
-          where: {
-            id: Number(item.menuId),
-          } as any,
-        });
-
-        if (menuItem) {
-          total_price += Number(menuItem.price) * Number(item.quantity);
-        }
+    for (const item of orderList) {
+      const menuItem: any = await prisma.menu.findFirst({
+        where: { id: Number(item.menuId || item.id) } as any,
+      });
+      if (menuItem) {
+        total_price += Number(menuItem.price) * Number(item.quantity || item.qty || 1);
       }
     }
 
-    // 2. Simpan order ke database
+    // Simpan order ke database
     const newOrder = await prisma.order.create({
       data: {
         customer,
-        table_number,
+        table_number: String(table_number), // Gunakan String di sini agar tidak error
         payment_method,
         total_price,
         orderList: {
           create: orderList.map((item: any) => ({
-            menuId: Number(item.menuId),
-            quantity: Number(item.quantity),
+            menuId: Number(item.menuId || item.id),
+            quantity: Number(item.quantity || item.qty || 1),
             note: item.note || "",
           })),
         },
@@ -77,11 +79,11 @@ export const createOrder = async (req: Request, res: Response) => {
       },
     });
 
-    // 3. Kirim email notifikasi
+    // Kirim email notifikasi
     try {
       await sendOrderNotificationEmail(newOrder);
     } catch (emailErr) {
-      console.error("⚠️ Email gagal dikirim, tetapi order tetap tersimpan:", emailErr);
+      console.error("⚠️ Gagal kirim email:", emailErr);
     }
 
     return res.status(201).json({
@@ -95,7 +97,7 @@ export const createOrder = async (req: Request, res: Response) => {
   }
 };
 
-// Update Status Order
+// 3. Update Status Order
 export const updateStatusOrder = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -117,20 +119,16 @@ export const updateStatusOrder = async (req: Request, res: Response) => {
   }
 };
 
-// Delete Order
+// 4. Delete Order
 export const deleteOrder = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const targetId = Number(id);
 
-    // Hapus rincian orderList terlebih dahulu
     await prisma.orderList.deleteMany({
-      where: {
-        orderId: targetId,
-      } as any,
+      where: { orderId: targetId } as any,
     });
 
-    // Hapus order utama
     await prisma.order.delete({
       where: { id: targetId },
     });
