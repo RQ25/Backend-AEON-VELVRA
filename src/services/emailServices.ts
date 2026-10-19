@@ -1,11 +1,19 @@
 import nodemailer from "nodemailer";
 
+// Gunakan host smtp.gmail.com dengan port 465 (SSL)
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: "smtp.gmail.com",
+  port: 465,
+  secure: true, // WAJIB true untuk port 465
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
+  // Tambahkan opsi TLS agar lolos dari pemblokiran firewall cloud
+  tls: {
+    rejectUnauthorized: false,
+  },
+  connectionTimeout: 15000, // Beri batas waktu koneksi 15 detik
 });
 
 export const sendOrderNotificationEmail = async (orderData: any) => {
@@ -81,7 +89,8 @@ export const sendOrderNotificationEmail = async (orderData: any) => {
     };
 
     const info = await transporter.sendMail(mailOptions);
-    console.log("✅ [EMAIL SERVICE] Email notifikasi terkirim! MessageID:", info.messageId);
+    console.log("✅ [EMAIL SERVICE] SUCCESS! Email terkirim ke:", process.env.EMAIL_RECEIVER);
+    console.log("--> Message ID:", info.messageId);
     return info;
   } catch (error) {
     console.error("❌ [EMAIL SERVICE] GAGAL MENGIRIM EMAIL:", error);
