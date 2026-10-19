@@ -6,7 +6,7 @@
   "build": "npx prisma generate && npx prisma db push && npx prisma db seed && tsc -p .",
   "start": "node dist/index.js",
   "dev": "ts-node-dev src/index.ts"
-},git add package.json
+},
   "keywords": [],
   "author": "",
   "license": "ISC",
