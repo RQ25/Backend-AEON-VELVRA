@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE `order` ADD COLUMN `menuId` INTEGER NOT NULL DEFAULT 0;
